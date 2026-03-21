@@ -19,7 +19,7 @@ class Renderer:
         """
         self._cfg = config
         self._mode = render_mode
-        self._scale = 28.0
+        self._scale = 50.0  
         self._pad = 16
         rw = config.room_width
         rh = config.room_height
