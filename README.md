@@ -33,3 +33,50 @@ python run/eval.py --agent ac --checkpoint artifacts/checkpoints/ac_ep5000.pt --
 ```
 
 Checkpoints are saved to `artifacts/checkpoints/` and logs to `artifacts/logs/`.
+
+## Project Structure
+
+```
+.
+├── src/                        # Library code
+│   ├── envs/
+│   │   ├── maze_env.py         # Gymnasium environment (MazeEnv)
+│   │   ├── maze.py             # Room geometry, wall placement, gap randomisation
+│   │   ├── figure.py           # T-shaped figure: physics body, progress ρ_i(s)
+│   │   └── renderer.py         # Pygame/RGB-array renderer
+│   ├── agents/
+│   │   ├── actor.py            # GaussianActor — shared by both agents
+│   │   ├── critic.py           # Critic (twin Q-networks)
+│   │   ├── actor_critic_agent.py  # Actor-Critic (off-policy, SAC-style)
+│   │   ├── reinforce_agent.py  # REINFORCE (on-policy, policy gradient)
+│   │   ├── baselines.py        # BaseBaseline, ZeroBaseline, MeanReturnBaseline
+│   │   └── replay_buffer.py    # Circular replay buffer (off-policy)
+│   └── utils/
+│       ├── config.py           # Config dataclass with all hyperparameters
+│       ├── geometry.py         # Ray casting, polygon area, compute_area_past_wall
+│       └── logger.py           # CSV training logger
+│
+├── run/                        # Entry-point scripts
+│   ├── train.py                # Train Actor-Critic or REINFORCE
+│   ├── eval.py                 # Evaluate a saved checkpoint
+│   ├── compare.py              # Side-by-side comparison of both agents
+│   ├── play.py                 # Interactive keyboard control
+│   ├── record.py               # Record an episode to video
+│   ├── train.sh                # Shell script: train Actor-Critic
+│   ├── train_reinforce.sh      # Shell script: train REINFORCE
+│   └── eval.sh                 # Shell script: evaluate
+│
+├── analysis/                   # Jupyter notebooks
+│   ├── learning_curves.ipynb   # Training curves for both agents
+│   ├── sac_vs_reinforce.ipynb  # Head-to-head comparison
+│   ├── policy_visualisation.ipynb  # Trajectory and action heatmaps
+│   └── ablation.ipynb          # Baseline and hyperparameter ablations
+│
+├── artifacts/                  # Generated at runtime (not tracked)
+│   ├── checkpoints/            # Saved model weights (.pt)
+│   ├── logs/                   # Training and evaluation CSV logs
+│   └── videos/                 # Recorded episode videos
+│
+├── requirements.txt
+└── README.md
+```
