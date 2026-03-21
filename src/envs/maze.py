@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 import pymunk
 
@@ -24,7 +26,82 @@ class Maze:
             config: Config with room dimensions, gap_width, wall x-positions.
             space:  pymunk Space to add static segments to.
         """
-        pass
+        self._cfg = config
+        self._space = space
+        self._static = space.static_body
+
+        rw = config.room_width
+        rh = config.room_height
+        side = (rw - config.corridor_length) * 0.5
+        self._x_walls = [side, side + config.corridor_length]
+
+        self._radius = 0.5
+        # Solid thickness of outer frame (world units). Segments with radius gave weak corners.
+        self._border_thickness = max(self._radius * 2.0, 1.0)
+        self._border_polys: list[pymunk.Poly] = []
+        self._wall_segs: list[tuple[pymunk.Segment, pymunk.Segment]] = []
+
+        self._y_gaps = [rh * 0.5, rh * 0.5]
+
+        self._add_room_bounds(rw, rh)
+        for xw in self._x_walls:
+            lower, upper = self._make_wall_pair_segments(xw, rh)
+            self._wall_segs.append((lower, upper))
+            space.add(lower, upper)
+
+        self._sync_wall_segments()
+
+    def _add_room_bounds(self, rw: float, rh: float) -> None:
+        """
+        Outer walls as filled rectangles **outside** [0, rw] × [0, rh].
+        This avoids corner gaps and inconsistent normals vs thin Segments + radius.
+        """
+        th = self._border_thickness
+        static = self._static
+        # Bottom strip (includes lower-left / lower-right corner blocks)
+        bottom = pymunk.Poly(
+            static,
+            [(-th, -th), (rw + th, -th), (rw + th, 0.0), (-th, 0.0)],
+        )
+        # Top strip
+        top = pymunk.Poly(
+            static,
+            [(-th, rh), (rw + th, rh), (rw + th, rh + th), (-th, rh + th)],
+        )
+        # Left strip (between bottom and top slabs; overlaps corner regions — OK)
+        left = pymunk.Poly(
+            static,
+            [(-th, 0.0), (0.0, 0.0), (0.0, rh), (-th, rh)],
+        )
+        # Right strip
+        right = pymunk.Poly(
+            static,
+            [(rw, 0.0), (rw + th, 0.0), (rw + th, rh), (rw, rh)],
+        )
+        for poly in (bottom, top, left, right):
+            poly.friction = 0.7
+            poly.elasticity = 0.0
+            self._border_polys.append(poly)
+            self._space.add(poly)
+
+    def _make_wall_pair_segments(self, x_wall: float, rh: float) -> tuple[pymunk.Segment, pymunk.Segment]:
+        lower = pymunk.Segment(self._static, (x_wall, 0.0), (x_wall, 0.0), self._radius)
+        upper = pymunk.Segment(self._static, (x_wall, rh), (x_wall, rh), self._radius)
+        for seg in (lower, upper):
+            seg.friction = 0.7
+            seg.elasticity = 0.0
+        return lower, upper
+
+    def _sync_wall_segments(self) -> None:
+        rh = self._cfg.room_height
+        half_gap = self._cfg.gap_width * 0.5
+        for (lower, upper), xw, yc in zip(self._wall_segs, self._x_walls, self._y_gaps):
+            y_lo = max(0.0, yc - half_gap)
+            y_hi = min(rh, yc + half_gap)
+            lower.unsafe_set_endpoints((xw, 0.0), (xw, y_lo))
+            upper.unsafe_set_endpoints((xw, y_hi), (xw, rh))
+        # unsafe_set_endpoints does not refresh the static spatial hash; required for shape_query / collisions.
+        self._space.reindex_static()
 
     def get_wall_geometries(self) -> list[dict]:
         """
@@ -40,7 +117,11 @@ class Maze:
         Returns:
             list of length 2, one dict per wall pair.
         """
-        pass
+        g = self._cfg.gap_width
+        return [
+            {'x': self._x_walls[0], 'y_gap': self._y_gaps[0], 'gap_width': g},
+            {'x': self._x_walls[1], 'y_gap': self._y_gaps[1], 'gap_width': g},
+        ]
 
     def randomise_gaps(self, rng: np.random.Generator) -> None:
         """
@@ -52,9 +133,24 @@ class Maze:
         Args:
             rng: numpy random generator (seeded for reproducibility).
         """
-        pass
+        rh = self._cfg.room_height
+        low = self._cfg.gap_margin
+        high = rh - self._cfg.gap_margin
+        if self._cfg.randomise_gaps:
+            self._y_gaps[0] = float(rng.uniform(low, high))
+            self._y_gaps[1] = float(rng.uniform(low, high))
+        else:
+            mid = rh * 0.5
+            self._y_gaps[0] = mid
+            self._y_gaps[1] = mid
+        self._sync_wall_segments()
 
     def is_out_of_bounds(self,
                          corners: list[tuple[float, float]]) -> bool:
         """Check predicate B(s): any corner outside room boundary."""
-        pass
+        rw, rh = self._cfg.room_width, self._cfg.room_height
+        eps = 1e-6
+        for x, y in corners:
+            if x < -eps or x > rw + eps or y < -eps or y > rh + eps:
+                return True
+        return False
