@@ -5,6 +5,8 @@ import pymunk
 from src.utils.config import Config
 from src.utils.geometry import compute_area_past_wall
 
+from src.envs.figure_corner_types import FigureCornerLabel, compute_corner_labels_for_outline
+
 
 def _moment_t_figure(masses: tuple[float, float, float],
                      sizes: tuple[tuple[float, float], tuple[float, float], tuple[float, float]],
@@ -109,6 +111,10 @@ class TFigure:
             self._shapes.append(sh)
         space.add(self._body, *self._shapes)
         self._total_area = float(area_total)
+
+        self.corner_labels: tuple[FigureCornerLabel, ...] = compute_corner_labels_for_outline(
+            self._outline_local
+        )
 
     @property
     def body(self) -> pymunk.Body:

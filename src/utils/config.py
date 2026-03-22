@@ -21,7 +21,10 @@ class Config:
     randomise_gaps: bool = True     # randomise y_gap each episode
     max_steps: int = 2000
     r_max: float = 10.0
+    # MazeEnv не использует: с каждого угла 5 лучей по розе вокруг ``FigureCornerLabel.wind8``.
     n_ray_directions: int = 8
+    # Подписи типов углов фигуры на pygame-визуализации (для отладки).
+    viz_corner_labels: bool = False
 
     # Figure
     top_bar_length: float = 5.0

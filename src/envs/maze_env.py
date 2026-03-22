@@ -7,7 +7,8 @@ from src.utils.config import Config
 from src.envs.figure import TFigure
 from src.envs.maze import Maze
 from src.envs.renderer import Renderer
-from src.utils.geometry import cast_rays_detailed
+from src.envs.figure_corner_types import five_rose_indices_around
+from src.utils.geometry import cast_rays_detailed_paired, compass8_dir_to_body_rad
 
 
 class MazeEnv(gymnasium.Env):
@@ -35,8 +36,23 @@ class MazeEnv(gymnasium.Env):
         )
 
         self.n_corners = len(self.figure._outline_local)
-        self.k_rays = self.n_corners * config.n_ray_directions
-        
+        # Внешний угол: 5 направлений розы вокруг ``wind8``; внутренний — один луч **противоположно**
+        # сектору угла (ЮВ → СЗ), т.е. роза ``(wind8 + 4) % 8``.
+        ci: list[int] = []
+        body_angles: list[float] = []
+        for vi, lb in enumerate(self.figure.corner_labels):
+            if lb.external:
+                for rose_k in five_rose_indices_around(lb.wind8):
+                    ci.append(vi)
+                    body_angles.append(compass8_dir_to_body_rad(rose_k))
+            else:
+                ci.append(vi)
+                inward_opposite = (lb.wind8 + 4) % 8
+                body_angles.append(compass8_dir_to_body_rad(inward_opposite))
+        self._ray_corner_idx = np.asarray(ci, dtype=np.int64)
+        self._ray_body_angles = np.asarray(body_angles, dtype=np.float64)
+        self.k_rays = int(self._ray_body_angles.shape[0])
+
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, 
             shape=(3 + self.k_rays,), 
@@ -138,26 +154,25 @@ class MazeEnv(gymnasium.Env):
 
     def _compute_state(self) -> np.ndarray:
         x, y = self.figure.body.position
-        theta = self.figure.body.angle
+        theta = float(self.figure.body.angle)
         corners = self.figure.get_corners()
 
-        base_dirs = np.linspace(0, 2 * np.pi, self.config.n_ray_directions, endpoint=False)
-        directions = (base_dirs + theta).tolist()
+        idx_c = self._ray_corner_idx
+        origins_sel = [corners[int(i)] for i in idx_c]
+        directions = (self._ray_body_angles + theta).tolist()
 
-        distances, endpoints, hits = cast_rays_detailed(
-            origins=corners,
+        distances, endpoints, hits = cast_rays_detailed_paired(
+            origins=origins_sel,
             directions=directions,
             space=self.space,
             r_max=self.config.r_max,
-            ignore_bodies=[self.figure.body]
+            ignore_bodies=[self.figure.body],
         )
 
-        n_dir = len(directions)
-        ray_origins_flat = [c for c in corners for _ in range(n_dir)]
         self._last_rays = {
-            "origins": ray_origins_flat,
+            "origins": origins_sel,
             "endpoints": endpoints,
-            "hits": hits
+            "hits": hits,
         }
 
         state = np.zeros(3 + len(distances), dtype=np.float32)
@@ -201,8 +216,10 @@ class MazeEnv(gymnasium.Env):
             "figure_corners": self.figure.get_corners(),
             "ray_origins": self._last_rays.get("origins", []),
             "ray_endpoints": self._last_rays.get("endpoints", []),
-            "ray_hits": self._last_rays.get("hits", [])
+            "ray_hits": self._last_rays.get("hits", []),
         }
+        if self.config.viz_corner_labels:
+            env_state["figure_corner_labels"] = [str(lb) for lb in self.figure.corner_labels]
         return self.renderer.render(env_state)
 
     def seed(self, seed: int) -> None:

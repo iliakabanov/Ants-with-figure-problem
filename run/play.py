@@ -91,15 +91,18 @@ def run_interactive(config: Config) -> None:
         rho_1, rho_2 = info["rho_1"], info["rho_2"]
 
         # 4 & 5. Render to back buffer, draw HUD, then present
-        env.unwrapped.renderer.draw_world({
+        draw_state = {
             "room_width": config.room_width,
             "room_height": config.room_height,
             "wall_geometries": env.unwrapped.maze.get_wall_geometries(),
             "figure_corners": env.unwrapped.figure.get_corners(),
             "ray_origins": env.unwrapped._last_rays.get("origins", []),
             "ray_endpoints": env.unwrapped._last_rays.get("endpoints", []),
-            "ray_hits": env.unwrapped._last_rays.get("hits", [])
-        })
+            "ray_hits": env.unwrapped._last_rays.get("hits", []),
+        }
+        if config.viz_corner_labels:
+            draw_state["figure_corner_labels"] = [str(lb) for lb in env.unwrapped.figure.corner_labels]
+        env.unwrapped.renderer.draw_world(draw_state)
         
         render_hud(env.unwrapped.renderer.canvas, step, total_reward, rho_1, rho_2)
         env.unwrapped.renderer.present()
@@ -121,5 +124,6 @@ def run_interactive(config: Config) -> None:
 if __name__ == "__main__":
     cfg = Config()
     # For manual play we can optionally increase time limit to allow slow exploration
-    cfg.max_steps = 5000 
+    cfg.max_steps = 5000
+    cfg.viz_corner_labels = True
     run_interactive(cfg)

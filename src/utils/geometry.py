@@ -69,6 +69,12 @@ def compute_area_past_wall(polygon: list[tuple[float, float]],
     return _polygon_area(clipped)
 
 
+def compass8_dir_to_body_rad(direction_index: int) -> float:
+    """8 направлений с шагом 45° в системе тела: 0 = север (+y), далее по часовой."""
+    i = int(direction_index) % 8
+    return 0.5 * math.pi - i * (0.25 * math.pi)
+
+
 def cast_rays_detailed(
     origins: list[tuple[float, float]],
     directions: list[float],
@@ -127,6 +133,62 @@ def cast_rays_detailed(
             out_d.append(dist)
             out_p.append((px, py))
             out_hit.append(hit)
+
+    return (
+        np.asarray(out_d, dtype=np.float64),
+        out_p,
+        out_hit,
+    )
+
+
+def cast_rays_detailed_paired(
+    origins: list[tuple[float, float]],
+    directions: list[float],
+    space: pymunk.Space,
+    r_max: float,
+    ignore_bodies: Iterable[pymunk.Body] | None = None,
+) -> tuple[np.ndarray, list[tuple[float, float]], list[bool]]:
+    """Как :func:`cast_rays_detailed`, но луч ``i`` = ``(origins[i], directions[i])`` (попарно)."""
+    if len(origins) != len(directions):
+        raise ValueError("origins and directions must have the same length")
+    ignore = frozenset(ignore_bodies) if ignore_bodies is not None else frozenset()
+    filt = pymunk.ShapeFilter()
+    eps = 1e-2
+    out_d: list[float] = []
+    out_p: list[tuple[float, float]] = []
+    out_hit: list[bool] = []
+
+    for (ox, oy), direction in zip(origins, directions):
+        c = math.cos(direction)
+        s = math.sin(direction)
+        sx = ox + c * eps
+        sy = oy + s * eps
+        ex = ox + c * r_max
+        ey = oy + s * r_max
+
+        hits = space.segment_query((sx, sy), (ex, ey), 0.0, filt)
+        best: float | None = None
+        for hit in hits:
+            if hit.shape.body in ignore:
+                continue
+            d = math.hypot(hit.point.x - ox, hit.point.y - oy)
+            if d < 1e-6:
+                continue
+            if best is None or d < best:
+                best = d
+
+        if best is None:
+            dist = r_max
+            hit = False
+        else:
+            dist = min(best, r_max)
+            hit = True
+
+        px = ox + c * dist
+        py = oy + s * dist
+        out_d.append(dist)
+        out_p.append((px, py))
+        out_hit.append(hit)
 
     return (
         np.asarray(out_d, dtype=np.float64),
