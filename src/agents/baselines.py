@@ -1,100 +1,133 @@
-import numpy as np
+"""
+Baseline abstraction and implementations for the ReinforceAgent.
+
+A baseline b(s) is subtracted from the Monte Carlo return G_t to reduce
+the variance of the policy gradient estimate:
+
+    grad J(theta) = E[ sum_t grad log pi(a_t|s_t) * (G_t - b(s_t)) ]
+
+Subtracting b(s) does not introduce bias as long as b does not depend
+on the action a_t. It only reduces variance.
+
+To add a new baseline, subclass BaseBaseline and implement the three
+abstract methods: estimate(), update(), state_dict(), load_state_dict().
+No other file needs to be modified.
+"""
+
 from abc import ABC, abstractmethod
+import numpy as np
 
 
 class BaseBaseline(ABC):
     """
     Abstract base class for REINFORCE baselines.
-    Subclass this to add new baseline variants without
-    modifying ReinforceAgent or any other file.
+
+    All baselines must implement estimate() and update().
+    The state_dict() / load_state_dict() pair is used for checkpointing.
     """
 
     @abstractmethod
     def estimate(self, state: np.ndarray) -> float:
         """
-        Return baseline value b(s) for the given state.
+        Return the baseline value b(s) for the given state.
+
+        This value will be subtracted from the Monte Carlo return G_t
+        to form the advantage estimate A_t = G_t - b(s_t).
 
         Args:
-            state: state vector s_t.
+            state: state vector s_t, shape (state_dim,).
 
         Returns:
-            b: scalar float.
+            b: scalar float baseline value.
         """
-        pass
 
     @abstractmethod
-    def update(self, states: list[np.ndarray],
-               returns: list[float]) -> None:
+    def update(
+        self,
+        states: list[np.ndarray],
+        returns: list[float],
+    ) -> None:
         """
-        Update baseline using (state, return) pairs from the episode.
+        Update the baseline using observed (state, return) pairs from
+        the completed episode.
+
+        Called once per episode after all returns G_t have been computed,
+        before the episode buffer is cleared.
 
         Args:
-            states:  list of state vectors from the completed episode.
-            returns: list of Monte Carlo returns G_t.
+            states:  list of state vectors s_t from the episode,
+                     length = episode length.
+            returns: list of Monte Carlo returns G_t for each step,
+                     length = episode length.
         """
-        pass
 
     @abstractmethod
     def state_dict(self) -> dict:
-        """Return serialisable state for checkpointing."""
-        pass
+        """
+        Return a serialisable dict of the baseline's internal state.
+        Used for saving checkpoints via agent.save().
+        """
 
     @abstractmethod
     def load_state_dict(self, state: dict) -> None:
-        """Restore baseline state from a checkpoint dict."""
-        pass
+        """
+        Restore the baseline's internal state from a checkpoint dict.
+        Used for loading checkpoints via agent.load().
 
+        Args:
+            state: dict previously returned by state_dict().
+        """
 
-# ── Concrete implementations ──────────────────────────────────
 
 class ZeroBaseline(BaseBaseline):
     """
     Trivial baseline: b(s) = 0 for all s.
+
     Equivalent to vanilla REINFORCE with no variance reduction.
-    Default starting point — replace with a better baseline later.
+    The policy gradient update reduces to:
+
+        grad J(theta) = E[ sum_t grad log pi(a_t|s_t) * G_t ]
+
+    This is the default starting point. Replace with a better baseline
+    (e.g. MeanReturnBaseline) to reduce gradient variance and speed up
+    learning.
     """
 
     def estimate(self, state: np.ndarray) -> float:
-        """Always returns 0.0."""
-        pass
-
-    def update(self, states: list[np.ndarray],
-               returns: list[float]) -> None:
-        """No-op: nothing to update."""
-        pass
-
-    def state_dict(self) -> dict:
-        pass
-
-    def load_state_dict(self, state: dict) -> None:
-        pass
-
-
-class MeanReturnBaseline(BaseBaseline):
-    """
-    Running mean baseline: b(s) = exponential moving average of G_t.
-    Reduces variance by centering returns around their running mean.
-    Updated once per episode.
-    """
-
-    def __init__(self, momentum: float = 0.99) -> None:
         """
+        Always returns 0.0 regardless of the state.
+
         Args:
-            momentum: EMA decay factor (closer to 1 = slower update).
+            state: state vector (ignored).
+
+        Returns:
+            0.0
         """
-        pass
+        return 0.0
 
-    def estimate(self, state: np.ndarray) -> float:
-        """Return current running mean of returns (ignores state)."""
-        pass
+    def update(
+        self,
+        states: list[np.ndarray],
+        returns: list[float],
+    ) -> None:
+        """
+        No-op: ZeroBaseline has no internal state to update.
 
-    def update(self, states: list[np.ndarray],
-               returns: list[float]) -> None:
-        """Update running mean with mean return of the episode."""
-        pass
+        Args:
+            states:  list of state vectors (ignored).
+            returns: list of returns (ignored).
+        """
 
     def state_dict(self) -> dict:
-        pass
+        """
+        Returns an empty dict — ZeroBaseline has no internal state.
+        """
+        return {}
 
     def load_state_dict(self, state: dict) -> None:
-        pass
+        """
+        No-op: nothing to restore.
+
+        Args:
+            state: dict (ignored).
+        """

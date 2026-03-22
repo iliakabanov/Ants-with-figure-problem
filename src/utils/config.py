@@ -6,10 +6,11 @@ class Config:
     """All hyperparameters and environment settings."""
 
     # Environment
-    room_width: float = 26.0
-    room_height: float = 17.0
-    gap_width: float = 3.0          # fixed gap width, same for all wall pairs
+    room_width: float = 30.0
+    room_height: float = 20.0
+    gap_width: float = 4.0          # fixed gap width, same for all wall pairs
     gap_margin: float = 4.0
+    wall_radius: float = 0.0        # pymunk segment radius for interior walls
     # Minimum distance from gap centre to floor/ceiling.
     # When gaps are randomised, y_gap is sampled uniformly from
     # [gap_margin, room_height - gap_margin].
@@ -19,15 +20,15 @@ class Config:
     # can always approach the gap from either side.
     corridor_length: float = 7.0
     randomise_gaps: bool = True     # randomise y_gap each episode
-    max_steps: int = 2000
+    max_steps: int = 100
     r_max: float = 10.0
     # MazeEnv не использует: с каждого угла 5 лучей по розе вокруг ``FigureCornerLabel.wind8``.
     n_ray_directions: int = 8
 
     # Figure
     top_bar_length: float = 5.0
-    leg_length: float = 4.0
-    bottom_bar_length: float = 2.0
+    leg_length: float = 5.0
+    bottom_bar_length: float = 1.5
     thickness: float = 1.0
 
     # Actions: (fx_body, fy_body, delta_theta_deg); +x тела — вдоль верхней перекладины Т, +y — ортогонально

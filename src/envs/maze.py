@@ -35,7 +35,7 @@ class Maze:
         side = (rw - config.corridor_length) * 0.5
         self._x_walls = [side, side + config.corridor_length]
 
-        self._radius = 0.5
+        self._radius = config.wall_radius
         # Solid thickness of outer frame (world units). Segments with radius gave weak corners.
         self._border_thickness = max(self._radius * 2.0, 1.0)
         self._border_polys: list[pymunk.Poly] = []
