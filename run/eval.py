@@ -6,6 +6,7 @@ import argparse
 import csv
 
 import numpy as np
+import imageio
 
 from src.utils.config import Config
 from src.envs.maze_env import MazeEnv
@@ -16,7 +17,9 @@ from src.agents.baselines import ZeroBaseline
 
 def evaluate(config: Config, agent,
              n_episodes: int = 20,
-             render_mode: str | None = None) -> tuple[float, float, float, float]:
+             render_mode: str | None = None,
+             record_dir: str | None = None,
+             record_episodes: int = 10) -> tuple[float, float, float, float]:
     """
     Run deterministic evaluation episodes and report metrics.
 
@@ -32,12 +35,22 @@ def evaluate(config: Config, agent,
         mean_steps:   mean number of steps per episode.
         std_return:   standard deviation of cumulative reward across episodes.
     """
-    env = MazeEnv(config, render_mode=render_mode)
+    recording = record_dir is not None
+    actual_render_mode = 'rgb_array' if recording else render_mode
+    env = MazeEnv(config, render_mode=actual_render_mode)
     returns, steps_list, successes = [], [], []
+
+    if recording:
+        os.makedirs(record_dir, exist_ok=True)
 
     for ep in range(n_episodes):
         state, _ = env.reset(seed=ep)
         ep_return, ep_steps, done, info = 0.0, 0, False, {}
+
+        writer = None
+        if recording and ep < record_episodes:
+            video_path = os.path.join(record_dir, f'ep{ep + 1:03d}.mp4')
+            writer = imageio.get_writer(video_path, fps=30)
 
         while not done:
             result = agent.select_action(state, deterministic=True)
@@ -45,9 +58,16 @@ def evaluate(config: Config, agent,
             state, reward, terminated, truncated, info = env.step(action)
             if render_mode == 'human':
                 env.render()
+            if writer is not None:
+                frame = env.render()
+                if frame is not None:
+                    writer.append_data(frame)
             done = terminated or truncated
             ep_return += reward
             ep_steps += 1
+
+        if writer is not None:
+            writer.close()
 
         returns.append(ep_return)
         steps_list.append(ep_steps)
@@ -71,8 +91,12 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint', required=True)
     parser.add_argument('--n_episodes', type=int, default=100)
     parser.add_argument('--seed',       type=int, default=None)
-    parser.add_argument('--render',     action='store_true',
+    parser.add_argument('--render',          action='store_true',
                         help='Render episodes in a window during evaluation.')
+    parser.add_argument('--record',          action='store_true',
+                        help='Record first --record_episodes episodes to artifacts/videos/.')
+    parser.add_argument('--record_episodes', type=int, default=10,
+                        help='Number of episodes to record (default: 10).')
     args = parser.parse_args()
 
     import torch
@@ -96,8 +120,14 @@ if __name__ == "__main__":
 
     agent.load(args.checkpoint)
 
+    record_dir = f'artifacts/videos/{args.agent}' if args.record else None
+
     mean_ret, success_rate, mean_steps, std_ret = evaluate(
-        config, agent, n_episodes=args.n_episodes, render_mode=render_mode
+        config, agent,
+        n_episodes=args.n_episodes,
+        render_mode=render_mode,
+        record_dir=record_dir,
+        record_episodes=args.record_episodes,
     )
 
     print(f"Mean return:   {mean_ret:.2f} ± {std_ret:.2f}")
@@ -128,3 +158,5 @@ if __name__ == "__main__":
     env.close()
 
     print(f"Saved -> {log_path}")
+    if args.record:
+        print(f"Videos -> {record_dir}/")
