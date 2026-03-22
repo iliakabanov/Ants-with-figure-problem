@@ -34,11 +34,9 @@ class MazeEnv(gymnasium.Env):
             dtype=np.float32
         )
 
-        # Calculate number of rays: 12 corners * n_ray_directions
         self.n_corners = len(self.figure._outline_local)
         self.k_rays = self.n_corners * config.n_ray_directions
         
-        # State: x, y, theta + K ray distances
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, 
             shape=(3 + self.k_rays,), 
@@ -47,11 +45,10 @@ class MazeEnv(gymnasium.Env):
 
         self.renderer = Renderer(config, render_mode=render_mode) if render_mode else None
 
-        # Internal state tracking
         self.step_count = 0
         self._rho_1 = 0.0
         self._rho_2 = 0.0
-        self._last_rays = {}  # for rendering
+        self._last_rays = {} 
 
     def reset(self, seed: int | None = None, options: dict | None = None) -> tuple[np.ndarray, dict]:
         super().reset(seed=seed)
@@ -61,12 +58,15 @@ class MazeEnv(gymnasium.Env):
         self.step_count = 0
         self.maze.randomise_gaps(self.np_random)
 
-        # Spawn figure on the left side of the room
-        start_x = self.config.room_width * 0.1
+        # Сдвигаем точку спавна до 20% от ширины (x=5.2)
+        start_x = self.config.room_width * 0.2
         start_y = self.config.room_height * 0.5
-        self.figure.set_state(start_x, start_y, 0.0)
+        
+        # Поскольку фигура теперь изначально собрана так, что смотрит ножкой вправо,
+        # нулевой угол ставит её в идеальное положение для старта
+        start_theta = 0.0
+        self.figure.set_state(start_x, start_y, start_theta)
 
-        # Initial progress
         walls = self.maze.get_wall_geometries()
         self._rho_1 = self.figure.compute_progress(walls[0])
         self._rho_2 = self.figure.compute_progress(walls[1])
@@ -83,31 +83,27 @@ class MazeEnv(gymnasium.Env):
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
         self.step_count += 1
 
-        # Clip action to valid bounds
         action = np.clip(action, self.action_space.low, self.action_space.high)
         
-        # Save current state for potential rollback
         old_x, old_y = self.figure.body.position
         old_theta = self.figure.body.angle
 
-        # Exact formulas from Section 4 of the specification
         delta_theta_deg, f = action[0], action[1]
         delta_theta_rad = np.radians(delta_theta_deg)
         
         new_theta = old_theta + delta_theta_rad
+        
+        # Строго математически чистое перемещение из спецификации
         new_x = old_x + f * np.cos(new_theta)
         new_y = old_y + f * np.sin(new_theta)
 
-        # Apply candidate state
         self.figure.set_state(new_x, new_y, new_theta)
         self.space.reindex_shapes_for_body(self.figure.body)
 
-        # Check Predicates C(s_tilde) and B(s_tilde)
         collision = False
         for shape in self.figure._shapes:
             query = self.space.shape_query(shape)
             for hit in query:
-                # Ignore self-collisions
                 if hit.shape.body != self.figure.body:
                     collision = True
                     break
@@ -116,13 +112,11 @@ class MazeEnv(gymnasium.Env):
         corners = self.figure.get_corners()
         out_of_bounds = self.maze.is_out_of_bounds(corners)
 
-        # Rollback if necessary
         if collision or out_of_bounds:
             self.figure.set_state(old_x, old_y, old_theta)
             self.space.reindex_shapes_for_body(self.figure.body)
-            corners = self.figure.get_corners() # Recompute corners for rays after rollback
+            corners = self.figure.get_corners()
 
-        # Compute new state and reward
         state = self._compute_state()
         reward = self._compute_reward(None, state, collision, out_of_bounds)
 
@@ -143,7 +137,6 @@ class MazeEnv(gymnasium.Env):
         theta = self.figure.body.angle
         corners = self.figure.get_corners()
 
-        # Fixed set of local directions for rays, relative to figure's angle
         base_dirs = np.linspace(0, 2 * np.pi, self.config.n_ray_directions, endpoint=False)
         directions = (base_dirs + theta).tolist()
 
@@ -155,7 +148,6 @@ class MazeEnv(gymnasium.Env):
             ignore_bodies=[self.figure.body]
         )
 
-        # Cache for rendering
         self._last_rays = {
             "origins": np.repeat(corners, len(directions), axis=0).tolist(),
             "endpoints": endpoints,
@@ -175,7 +167,6 @@ class MazeEnv(gymnasium.Env):
         delta_rho_1 = new_rho_1 - self._rho_1
         delta_rho_2 = new_rho_2 - self._rho_2
 
-        # Update stored progress
         self._rho_1 = new_rho_1
         self._rho_2 = new_rho_2
 

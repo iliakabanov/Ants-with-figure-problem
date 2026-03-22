@@ -39,7 +39,7 @@ def _outline_local(top_len: float, leg_len: float, bottom_len: float, t: float) 
     hx_top = top_len * 0.5
     hx_leg = t * 0.5
     hx_bot = bottom_len * 0.5
-    return [
+    pts = [
         (-hx_top, y_top_hi),
         (hx_top, y_top_hi),
         (hx_top, y_top_lo),
@@ -53,6 +53,7 @@ def _outline_local(top_len: float, leg_len: float, bottom_len: float, t: float) 
         (-hx_leg, y_top_lo),
         (-hx_top, y_top_lo),
     ]
+    return [(y, -x) for x, y in pts]
 
 
 class TFigure:
@@ -86,12 +87,14 @@ class TFigure:
         self._shapes: list[pymunk.Shape] = []
 
         def box_verts(cx: float, cy: float, half_w: float, half_h: float) -> list[tuple[float, float]]:
-            return [
+            pts = [
                 (cx - half_w, cy - half_h),
                 (cx + half_w, cy - half_h),
                 (cx + half_w, cy + half_h),
                 (cx - half_w, cy + half_h),
             ]
+            # ПРИМЕНЯЕМ ТОТ ЖЕ ПОВОРОТ НА 90 ГРАДУСОВ
+            return [(y, -x) for x, y in pts]
 
         parts = (
             (tl * 0.5, t * 0.5, top_cy),

@@ -1,72 +1,125 @@
 import numpy as np
+import pygame
 
 from src.utils.config import Config
+from src.envs.maze_env import MazeEnv
+
+
+def keys_to_action(keys, config: Config) -> np.ndarray:
+    """
+    Convert pressed keys to a continuous action vector.
+    Strictly follows 2D action space: (delta_theta, thrust_f)
+    """
+    delta_theta = 0.0
+    f = 0.0
+
+    # Вращение (Left/Right)
+    if keys[pygame.K_LEFT]:
+        delta_theta = config.max_delta_theta
+    if keys[pygame.K_RIGHT]:
+        delta_theta = -config.max_delta_theta
+
+    # Вперед/Назад по текущему курсу (Up/Down)
+    if keys[pygame.K_UP]:
+        f = config.max_thrust
+    if keys[pygame.K_DOWN]:
+        f = -config.max_thrust
+
+    return np.array([delta_theta, f], dtype=np.float32)
+
+
+def render_hud(surface: pygame.Surface, step: int, total_reward: float, rho_1: float, rho_2: float) -> None:
+    """
+    Draw heads-up display overlay on the pygame surface.
+    """
+    font = pygame.font.SysFont("Courier", 18, bold=True)
+    text_lines = [
+        f"Step:   {step}",
+        f"Reward: {total_reward:.2f}",
+        f"Rho 1:  {rho_1 * 100:.1f}%",
+        f"Rho 2:  {rho_2 * 100:.1f}%"
+    ]
+    
+    y_offset = 10
+    for line in text_lines:
+        text_surf = font.render(line, True, (20, 20, 20))
+        surface.blit(text_surf, (10, y_offset))
+        y_offset += 25
 
 
 def run_interactive(config: Config) -> None:
-    """
-    Main interactive loop.
-    Each pygame frame:
-        1. Read keyboard state.
-        2. Map keys to action (delta_theta, f).
-        3. Call env.step(action).
-        4. Render updated state.
-        5. Display HUD: step count, reward, rho_1, rho_2.
+    # Initialize environment with human rendering mode
+    env = MazeEnv(config, render_mode="human")
+    obs, info = env.reset()
 
-    Args:
-        config: Config with environment hyperparameters.
-    """
-    pass
+    clock = pygame.time.Clock()
+    running = True
 
+    step = 0
+    total_reward = 0.0
+    rho_1, rho_2 = info["rho_1"], info["rho_2"]
 
-def keys_to_action(keys: dict, config: Config) -> np.ndarray:
-    """
-    Convert pressed keys to a continuous action vector.
-    Simultaneous key presses are supported:
-        e.g. RIGHT + UP rotates and pushes at the same time.
+    print("=== Figure Maze Manual Play ===")
+    print("Controls (Strictly by spec):")
+    print("  UP/DOWN    - Thrust (push along heading)")
+    print("  LEFT/RIGHT - Rotate")
+    print("  R: Reset, ESC: Quit")
 
-    Args:
-        keys:   dict of pygame key states (from pygame.key.get_pressed()).
-        config: Config for max_delta_theta and max_thrust values.
+    while running:
+        # 1. Handle events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
+                    running = False
+                elif event.key == pygame.K_r:
+                    obs, info = env.reset()
+                    step = 0
+                    total_reward = 0.0
+                    rho_1, rho_2 = info["rho_1"], info["rho_2"]
+                    print("Environment reset.")
 
-    Returns:
-        action: numpy array [delta_theta, f].
-                Returns [0.0, 0.0] if no relevant key is pressed.
-    """
-    pass
+        # 2. Read keyboard and map to action
+        keys = pygame.key.get_pressed()
+        action = keys_to_action(keys, config)
 
+        # 3. Environment step
+        obs, reward, terminated, truncated, info = env.step(action)
+        step += 1
+        total_reward += reward
+        rho_1, rho_2 = info["rho_1"], info["rho_2"]
 
-def render_hud(surface, step: int,
-               total_reward: float,
-               rho_1: float, rho_2: float) -> None:
-    """
-    Draw heads-up display overlay on the pygame surface.
-    Shows: current step, cumulative reward, progress rho_1 and rho_2
-    as text in the top-left corner of the window.
+        # 4 & 5. Render to back buffer, draw HUD, then present
+        env.unwrapped.renderer.draw_world({
+            "room_width": config.room_width,
+            "room_height": config.room_height,
+            "wall_geometries": env.unwrapped.maze.get_wall_geometries(),
+            "figure_corners": env.unwrapped.figure.get_corners(),
+            "ray_origins": env.unwrapped._last_rays.get("origins", []),
+            "ray_endpoints": env.unwrapped._last_rays.get("endpoints", []),
+            "ray_hits": env.unwrapped._last_rays.get("hits", [])
+        })
+        
+        render_hud(env.unwrapped.renderer.canvas, step, total_reward, rho_1, rho_2)
+        env.unwrapped.renderer.present()
 
-    Args:
-        surface:      pygame surface to draw on.
-        step:         current step count in the episode.
-        total_reward: cumulative reward so far.
-        rho_1:        progress past wall pair 1 in [0, 1].
-        rho_2:        progress past wall pair 2 in [0, 1].
-    """
-    pass
+        if terminated or truncated:
+            reason = "Finished!" if terminated else "Time out!"
+            print(f"Episode ended ({reason}). Total Reward: {total_reward:.2f}")
+            obs, info = env.reset()
+            step = 0
+            total_reward = 0.0
+
+        # Cap framerate to real-time 30 FPS
+        clock.tick(30)
+
+    env.close()
+    pygame.quit()
 
 
 if __name__ == "__main__":
-    """
-    Play the labyrinth game manually using the keyboard.
-    The environment runs in real time with pygame rendering.
-
-    Controls:
-        LEFT  arrow — rotate figure counter-clockwise (delta_theta = -max)
-        RIGHT arrow — rotate figure clockwise          (delta_theta = +max)
-        UP    arrow — push figure forward              (f = +max)
-        DOWN  arrow — push figure backward             (f = -max)
-        R           — reset episode
-        Q / ESC     — quit
-
-    Usage: python run/play.py
-    """
-    pass
+    cfg = Config()
+    # For manual play we can optionally increase time limit to allow slow exploration
+    cfg.max_steps = 5000 
+    run_interactive(cfg)
