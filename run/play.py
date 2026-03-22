@@ -6,7 +6,7 @@ from src.envs.maze_env import MazeEnv
 
 
 def keys_to_action(keys, config: Config) -> np.ndarray:
-    """(fx_body, fy_body, delta_theta). W/S — поперечина; E/Q — ножка (±fy); A/D — поворот."""
+    """(fx_body, fy_body, delta_theta). W/S — поперечина; Q/E — ножка (±fy); A/D — поворот."""
     fx = 0.0
     fy = 0.0
     delta_theta = 0.0
@@ -16,9 +16,9 @@ def keys_to_action(keys, config: Config) -> np.ndarray:
         fx += mt
     if keys[pygame.K_s]:
         fx -= mt
-    if keys[pygame.K_e]:
-        fy += mt
     if keys[pygame.K_q]:
+        fy += mt
+    if keys[pygame.K_e]:
         fy -= mt
     if keys[pygame.K_a]:
         delta_theta = config.max_delta_theta
@@ -61,7 +61,7 @@ def run_interactive(config: Config) -> None:
 
     print("=== Figure Maze Manual Play ===")
     print("Controls:")
-    print("  W S — поперечина (+x тела), E / Q — ножка (+y / −y)")
+    print("  W S — поперечина (+x тела), Q / E — ножка (+y / −y)")
     print("  A / D — поворот (+ / − max_delta_theta)")
     print("  R: Reset, ESC: Quit")
 
