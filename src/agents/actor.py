@@ -19,7 +19,7 @@ LOG_STD_MAX = 2.0
 
 class GaussianActor(nn.Module):
     """
-    Stochastic Gaussian actor: one hidden layer + mean / log_std heads.
+    Stochastic Gaussian actor: two hidden layers + mean / log_std heads.
     """
 
     def __init__(self, state_dim: int, action_dim: int, hidden_dim: int) -> None:
@@ -27,6 +27,8 @@ class GaussianActor(nn.Module):
 
         self.net = nn.Sequential(
             nn.Linear(state_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
         )
         self.mean_head = nn.Linear(hidden_dim, action_dim)

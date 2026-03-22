@@ -23,7 +23,7 @@ class Config:
     # can always approach the gap from either side.
     corridor_length: float = 7.0
     randomise_gaps: bool = True     # randomise y_gap each episode
-    max_steps: int = 100
+    max_steps: int = 2000
 
     # Figure
     top_bar_length: float = 5.0
@@ -53,7 +53,7 @@ class Config:
     tau: float = 0.005
     batch_size: int = 256
     buffer_capacity: int = 200_000
-    hidden_dim: int = 64
+    hidden_dim: int = 128
     warmup_steps: int = 0
 
     # REINFORCE

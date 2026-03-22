@@ -12,13 +12,15 @@ from torch import Tensor
 
 class Critic(nn.Module):
     """
-    Q-network: one hidden layer, concat(state, action) -> scalar Q.
+    Q-network: two hidden layers, concat(state, action) -> scalar Q.
     """
 
     def __init__(self, state_dim: int, action_dim: int, hidden_dim: int) -> None:
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(state_dim + action_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),
         )
