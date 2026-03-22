@@ -7,6 +7,7 @@ import csv
 
 import numpy as np
 import imageio
+from PIL import Image, ImageDraw, ImageFont
 
 from src.utils.config import Config
 from src.envs.maze_env import MazeEnv
@@ -56,15 +57,23 @@ def evaluate(config: Config, agent,
             result = agent.select_action(state, deterministic=True)
             action = result[0] if isinstance(result, tuple) else result
             state, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+            ep_return += reward
+            ep_steps += 1
             if render_mode == 'human':
                 env.render()
             if writer is not None:
                 frame = env.render()
                 if frame is not None:
-                    writer.append_data(frame)
-            done = terminated or truncated
-            ep_return += reward
-            ep_steps += 1
+                    img = Image.fromarray(frame)
+                    draw = ImageDraw.Draw(img)
+                    try:
+                        font = ImageFont.truetype("arial.ttf", 28)
+                    except OSError:
+                        font = ImageFont.load_default(size=28)
+                    text = f"step: {ep_steps}   return: {ep_return:.2f}"
+                    draw.text((10, 10), text, fill=(0, 0, 0), font=font)
+                    writer.append_data(np.array(img))
 
         if writer is not None:
             writer.close()

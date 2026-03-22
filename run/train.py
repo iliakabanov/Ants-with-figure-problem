@@ -14,6 +14,15 @@ from src.agents.reinforce_agent import ReinforceAgent
 from src.agents.baselines import ZeroBaseline
 
 
+def _grad_norm(agent) -> float:
+    """Compute L2 norm of actor gradients after the last update."""
+    total = 0.0
+    for p in agent.actor.parameters():
+        if p.grad is not None:
+            total += p.grad.norm().item() ** 2
+    return total ** 0.5
+
+
 def build_agent(config: Config,
                 agent_name: str):
     """
@@ -96,9 +105,12 @@ def train(config: Config, agent) -> None:
 
     env = MazeEnv(config)
 
+    grad_norms: list[float] = []
+
     for episode in range(1, config.n_episodes + 1):
         state, _ = env.reset(seed=config.seed + episode)
         ep_return, ep_steps, done, info = 0.0, 0, False, {}
+        ep_grad_norms: list[float] = []
 
         while not done:
             if is_ac:
@@ -116,6 +128,7 @@ def train(config: Config, agent) -> None:
                 agent.replay_buffer.push(state, action, reward, next_state, done)
                 if len(agent.replay_buffer) > 0:
                     agent.update()
+                    ep_grad_norms.append(_grad_norm(agent))
             else:
                 agent.store_transition(state, action, reward, log_prob)
 
@@ -123,6 +136,10 @@ def train(config: Config, agent) -> None:
 
         if not is_ac:
             agent.update()
+            ep_grad_norms.append(_grad_norm(agent))
+
+        if ep_grad_norms:
+            grad_norms.append(float(np.mean(ep_grad_norms)))
 
         success = int(info.get('rho_1', 0.0) >= 1.0 and
                       info.get('rho_2', 0.0) >= 1.0)
@@ -132,7 +149,9 @@ def train(config: Config, agent) -> None:
 
         if episode % config.eval_every == 0:
             mean_ret, success_rate = _run_eval(config, agent)
-            print(f"ep {episode:5d} | eval return: {mean_ret:8.2f} | success: {success_rate:.2f}")
+            mean_grad = float(np.mean(grad_norms)) if grad_norms else 0.0
+            grad_norms.clear()
+            print(f"ep {episode:5d} | eval return: {mean_ret:8.2f} | success: {success_rate:.2f} | grad_norm: {mean_grad:.4f}")
 
         if episode % config.checkpoint_every == 0:
             path = f'artifacts/checkpoints/{agent_tag}_ep{episode}.pt'

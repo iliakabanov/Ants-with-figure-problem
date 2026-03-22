@@ -190,6 +190,8 @@ class ReinforceAgent:
         # ── Step 5: Gradient update ────────────────────────────────────
         self.actor_optimizer.zero_grad()
         loss.backward()
+        if self.config.grad_clip > 0.0:
+            nn.utils.clip_grad_norm_(self.actor.parameters(), self.config.grad_clip)
         self.actor_optimizer.step()
 
         # ── Step 6: Update baseline ────────────────────────────────────
