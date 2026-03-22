@@ -6,26 +6,26 @@ from src.envs.maze_env import MazeEnv
 
 
 def keys_to_action(keys, config: Config) -> np.ndarray:
-    """
-    Convert pressed keys to a continuous action vector.
-    Strictly follows 2D action space: (delta_theta, thrust_f)
-    """
+    """(fx_body, fy_body, delta_theta). W/S — поперечина; E/Q — ножка (±fy); A/D — поворот."""
+    fx = 0.0
+    fy = 0.0
     delta_theta = 0.0
-    f = 0.0
+    mt = config.max_thrust
 
-    # Вращение (Left/Right)
-    if keys[pygame.K_LEFT]:
+    if keys[pygame.K_w]:
+        fx += mt
+    if keys[pygame.K_s]:
+        fx -= mt
+    if keys[pygame.K_e]:
+        fy += mt
+    if keys[pygame.K_q]:
+        fy -= mt
+    if keys[pygame.K_a]:
         delta_theta = config.max_delta_theta
-    if keys[pygame.K_RIGHT]:
+    if keys[pygame.K_d]:
         delta_theta = -config.max_delta_theta
 
-    # Вперед/Назад по текущему курсу (Up/Down)
-    if keys[pygame.K_UP]:
-        f = config.max_thrust
-    if keys[pygame.K_DOWN]:
-        f = -config.max_thrust
-
-    return np.array([delta_theta, f], dtype=np.float32)
+    return np.array([fx, fy, delta_theta], dtype=np.float32)
 
 
 def render_hud(surface: pygame.Surface, step: int, total_reward: float, rho_1: float, rho_2: float) -> None:
@@ -60,9 +60,9 @@ def run_interactive(config: Config) -> None:
     rho_1, rho_2 = info["rho_1"], info["rho_2"]
 
     print("=== Figure Maze Manual Play ===")
-    print("Controls (Strictly by spec):")
-    print("  UP/DOWN    - Thrust (push along heading)")
-    print("  LEFT/RIGHT - Rotate")
+    print("Controls:")
+    print("  W S — поперечина (+x тела), E / Q — ножка (+y / −y)")
+    print("  A / D — поворот (+ / − max_delta_theta)")
     print("  R: Reset, ESC: Quit")
 
     while running:
@@ -71,7 +71,7 @@ def run_interactive(config: Config) -> None:
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
+                if event.key == pygame.K_ESCAPE:
                     running = False
                 elif event.key == pygame.K_r:
                     obs, info = env.reset()

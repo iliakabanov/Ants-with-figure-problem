@@ -32,7 +32,7 @@ class Config:
     bottom_bar_length: float = 2.0
     thickness: float = 1.0
 
-    # Actions
+    # Actions: (fx_body, fy_body, delta_theta_deg); +x тела — вдоль верхней перекладины Т, +y — ортогонально
     max_delta_theta: float = 5.0
     max_thrust: float = 0.1
 

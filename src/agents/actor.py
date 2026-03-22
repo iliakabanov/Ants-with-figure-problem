@@ -14,7 +14,7 @@ class GaussianActor(nn.Module):
         """
         Args:
             state_dim:  dimensionality of state vector (3 + K).
-            action_dim: dimensionality of action (2).
+            action_dim: dimensionality of action (3): fx_body, fy_body, delta_theta_deg.
             hidden_dim: number of units in hidden layers.
         """
         pass

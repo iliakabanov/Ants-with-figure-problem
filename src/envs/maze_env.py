@@ -14,7 +14,8 @@ from src.utils.geometry import cast_rays_detailed_paired, compass8_dir_to_body_r
 class MazeEnv(gymnasium.Env):
     """
     Gymnasium environment for the figure-navigation task.
-    Strictly follows the 2D action space: (delta_theta, f).
+    Action: (fx_body, fy_body, delta_theta_deg) — сдвиг ЦМ в системе тела (+x вдоль верхней перекладины Т,
+    +y вдоль ножки), затем в мир через ``Vec2d(fx,fy).rotated(theta)``; третий компонент — поворот в градусах.
     """
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
@@ -28,11 +29,11 @@ class MazeEnv(gymnasium.Env):
         self.maze = Maze(config, self.space)
         self.figure = TFigure(self.space, config)
 
-        # Action space: [delta_theta (deg), f (thrust)]
+        mt = float(config.max_thrust)
         self.action_space = spaces.Box(
-            low=np.array([-config.max_delta_theta, -config.max_thrust], dtype=np.float32),
-            high=np.array([config.max_delta_theta, config.max_thrust], dtype=np.float32),
-            dtype=np.float32
+            low=np.array([-mt, -mt, -config.max_delta_theta], dtype=np.float32),
+            high=np.array([mt, mt, config.max_delta_theta], dtype=np.float32),
+            dtype=np.float32,
         )
 
         self.n_corners = len(self.figure._outline_local)
@@ -106,14 +107,13 @@ class MazeEnv(gymnasium.Env):
         old_x, old_y = self.figure.body.position
         old_theta = self.figure.body.angle
 
-        delta_theta_deg, f = action[0], action[1]
+        fx_b, fy_b, delta_theta_deg = float(action[0]), float(action[1]), float(action[2])
         delta_theta_rad = np.radians(delta_theta_deg)
-        
+
+        delta_world = pymunk.Vec2d(fx_b, fy_b).rotated(old_theta)
+        new_x = old_x + delta_world.x
+        new_y = old_y + delta_world.y
         new_theta = old_theta + delta_theta_rad
-        
-        # Строго математически чистое перемещение из спецификации
-        new_x = old_x + f * np.cos(new_theta)
-        new_y = old_y + f * np.sin(new_theta)
 
         self.figure.set_state(new_x, new_y, new_theta)
         self.space.reindex_shapes_for_body(self.figure.body)
