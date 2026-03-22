@@ -62,7 +62,7 @@ class Config:
     baseline_momentum: float = 0.99
 
     # Training
-    n_episodes: int = 5000
+    n_episodes: int = 1000
     eval_every: int = 50
     checkpoint_every: int = 500
     seed: int = 42
