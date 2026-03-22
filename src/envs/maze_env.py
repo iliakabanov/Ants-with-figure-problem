@@ -3,12 +3,16 @@ import gymnasium
 from gymnasium import spaces
 import pymunk
 
-from src.utils.config import Config
+from src.utils.config import Config, MAZE_ACTION_DIM
 from src.envs.figure import TFigure
 from src.envs.maze import Maze
 from src.envs.renderer import Renderer
-from src.envs.figure_corner_types import five_rose_indices_around
-from src.utils.geometry import cast_rays_detailed_paired, compass8_dir_to_body_rad
+
+
+# Два вертикальных ряда стен с проёмами; наблюдение добавляет 2*(Δx, Δy к центру щели) + ширина щели.
+N_WALL_PAIRS = 2
+# pose (3) + относительные (x_wall - px, y_gap - py) на каждую пару + gap_width
+OBSERVATION_DIM = 3 + N_WALL_PAIRS * 2 + 1
 
 
 class MazeEnv(gymnasium.Env):
@@ -16,6 +20,9 @@ class MazeEnv(gymnasium.Env):
     Gymnasium environment for the figure-navigation task.
     Action: (fx_body, fy_body, delta_theta_deg) — сдвиг ЦМ в системе тела (+x вдоль верхней перекладины Т,
     +y вдоль ножки), затем в мир через ``Vec2d(fx,fy).rotated(theta)``; третий компонент — поворот в градусах.
+
+    Observation: ``(x, y, θ)`` фигуры в мире; для каждой пары стен — смещение от ЦМ до центра проёма
+    ``(x_wall - x, y_gap - y)``; последний скаляр — ``gap_width`` (общий для всех проёмов).
     """
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
@@ -24,7 +31,6 @@ class MazeEnv(gymnasium.Env):
         self.config = config
         self.render_mode = render_mode
 
-        # Init physics space
         self.space = pymunk.Space()
         self.maze = Maze(config, self.space)
         self.figure = TFigure(self.space, config)
@@ -35,29 +41,16 @@ class MazeEnv(gymnasium.Env):
             high=np.array([mt, mt, config.max_delta_theta], dtype=np.float32),
             dtype=np.float32,
         )
-
-        self.n_corners = len(self.figure._outline_local)
-        # Внешний угол: 5 направлений розы вокруг ``wind8``; внутренний — один луч **противоположно**
-        # сектору угла (ЮВ → СЗ), т.е. роза ``(wind8 + 4) % 8``.
-        ci: list[int] = []
-        body_angles: list[float] = []
-        for vi, lb in enumerate(self.figure.corner_labels):
-            if lb.external:
-                for rose_k in five_rose_indices_around(lb.wind8):
-                    ci.append(vi)
-                    body_angles.append(compass8_dir_to_body_rad(rose_k))
-            else:
-                ci.append(vi)
-                inward_opposite = (lb.wind8 + 4) % 8
-                body_angles.append(compass8_dir_to_body_rad(inward_opposite))
-        self._ray_corner_idx = np.asarray(ci, dtype=np.int64)
-        self._ray_body_angles = np.asarray(body_angles, dtype=np.float64)
-        self.k_rays = int(self._ray_body_angles.shape[0])
+        if self.action_space.shape[0] != MAZE_ACTION_DIM:
+            raise ValueError(
+                f"MazeEnv action_space must have shape ({MAZE_ACTION_DIM},); got {self.action_space.shape}."
+            )
 
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, 
-            shape=(3 + self.k_rays,), 
-            dtype=np.float32
+            low=-np.inf,
+            high=np.inf,
+            shape=(OBSERVATION_DIM,),
+            dtype=np.float32,
         )
 
         self.renderer = Renderer(config, render_mode=render_mode) if render_mode else None
@@ -65,7 +58,6 @@ class MazeEnv(gymnasium.Env):
         self.step_count = 0
         self._rho_1 = 0.0
         self._rho_2 = 0.0
-        self._last_rays = {} 
 
     def reset(self, seed: int | None = None, options: dict | None = None) -> tuple[np.ndarray, dict]:
         super().reset(seed=seed)
@@ -75,12 +67,8 @@ class MazeEnv(gymnasium.Env):
         self.step_count = 0
         self.maze.randomise_gaps(self.np_random)
 
-        # Сдвигаем точку спавна до 20% от ширины (x=5.2)
         start_x = self.config.room_width * 0.2
         start_y = self.config.room_height * 0.5
-        
-        # Поскольку фигура теперь изначально собрана так, что смотрит ножкой вправо,
-        # нулевой угол ставит её в идеальное положение для старта
         start_theta = 0.0
         self.figure.set_state(start_x, start_y, start_theta)
         self.space.reindex_shapes_for_body(self.figure.body)
@@ -95,7 +83,7 @@ class MazeEnv(gymnasium.Env):
             "rho_1": self._rho_1,
             "rho_2": self._rho_2,
             "collision": False,
-            "out_of_bounds": False
+            "out_of_bounds": False,
         }
         return state, info
 
@@ -103,7 +91,7 @@ class MazeEnv(gymnasium.Env):
         self.step_count += 1
 
         action = np.clip(action, self.action_space.low, self.action_space.high)
-        
+
         old_x, old_y = self.figure.body.position
         old_theta = self.figure.body.angle
 
@@ -126,7 +114,8 @@ class MazeEnv(gymnasium.Env):
                 if hit.shape.body != self.figure.body:
                     collision = True
                     break
-            if collision: break
+            if collision:
+                break
 
         corners = self.figure.get_corners()
         out_of_bounds = self.maze.is_out_of_bounds(corners)
@@ -137,8 +126,9 @@ class MazeEnv(gymnasium.Env):
             self.space.reindex_static()
             corners = self.figure.get_corners()
 
+        delta_x_world = float(self.figure.body.position.x - old_x)
         state = self._compute_state()
-        reward = self._compute_reward(None, state, collision, out_of_bounds)
+        reward = self._compute_reward(None, state, collision, out_of_bounds, delta_x_world)
 
         terminated = bool(self._rho_1 >= 1.0 and self._rho_2 >= 1.0)
         truncated = bool(self.step_count >= self.config.max_steps)
@@ -147,40 +137,37 @@ class MazeEnv(gymnasium.Env):
             "rho_1": self._rho_1,
             "rho_2": self._rho_2,
             "collision": collision,
-            "out_of_bounds": out_of_bounds
+            "out_of_bounds": out_of_bounds,
         }
 
         return state, reward, terminated, truncated, info
 
     def _compute_state(self) -> np.ndarray:
-        x, y = self.figure.body.position
+        x = float(self.figure.body.position.x)
+        y = float(self.figure.body.position.y)
         theta = float(self.figure.body.angle)
-        corners = self.figure.get_corners()
+        walls = self.maze.get_wall_geometries()
+        gw = float(self.config.gap_width)
+        parts: list[float] = [x, y, theta]
+        for w in walls:
+            parts.append(float(w["x"]) - x)
+            parts.append(float(w["y_gap"]) - y)
+        parts.append(gw)
+        out = np.asarray(parts, dtype=np.float32)
+        if out.shape[0] != OBSERVATION_DIM:
+            raise RuntimeError(
+                f"Observation dim {out.shape[0]} != OBSERVATION_DIM={OBSERVATION_DIM}."
+            )
+        return out
 
-        idx_c = self._ray_corner_idx
-        origins_sel = [corners[int(i)] for i in idx_c]
-        directions = (self._ray_body_angles + theta).tolist()
-
-        distances, endpoints, hits = cast_rays_detailed_paired(
-            origins=origins_sel,
-            directions=directions,
-            space=self.space,
-            r_max=self.config.r_max,
-            ignore_bodies=[self.figure.body],
-        )
-
-        self._last_rays = {
-            "origins": origins_sel,
-            "endpoints": endpoints,
-            "hits": hits,
-        }
-
-        state = np.zeros(3 + len(distances), dtype=np.float32)
-        state[0], state[1], state[2] = x, y, theta
-        state[3:] = distances
-        return state
-
-    def _compute_reward(self, s, s_next, collision: bool, out_of_bounds: bool) -> float:
+    def _compute_reward(
+        self,
+        s,
+        s_next,
+        collision: bool,
+        out_of_bounds: bool,
+        delta_x_world: float,
+    ) -> float:
         walls = self.maze.get_wall_geometries()
         new_rho_1 = self.figure.compute_progress(walls[0])
         new_rho_2 = self.figure.compute_progress(walls[1])
@@ -194,13 +181,16 @@ class MazeEnv(gymnasium.Env):
         reward = 0.0
         if self._rho_1 >= 1.0 and self._rho_2 >= 1.0:
             reward += self.config.r_fin
-        
+
         if collision:
             reward -= self.config.r_col
         if out_of_bounds:
             reward -= self.config.r_oob
-            
+
         reward += self.config.r_wall * (delta_rho_1 + delta_rho_2)
+        rr = float(self.config.r_right)
+        if rr != 0.0:
+            reward += rr * max(0.0, delta_x_world)
         reward -= self.config.r_step
 
         return reward
@@ -208,15 +198,15 @@ class MazeEnv(gymnasium.Env):
     def render(self) -> np.ndarray | None:
         if self.renderer is None:
             return None
-        
+
         env_state = {
             "room_width": self.config.room_width,
             "room_height": self.config.room_height,
             "wall_geometries": self.maze.get_wall_geometries(),
             "figure_corners": self.figure.get_corners(),
-            "ray_origins": self._last_rays.get("origins", []),
-            "ray_endpoints": self._last_rays.get("endpoints", []),
-            "ray_hits": self._last_rays.get("hits", []),
+            "ray_origins": [],
+            "ray_endpoints": [],
+            "ray_hits": [],
         }
         return self.renderer.render(env_state)
 

@@ -23,6 +23,8 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
+from src.utils.config import MAZE_ACTION_DIM
+
 from .actor import GaussianActor
 from .baselines import BaseBaseline, ZeroBaseline
 
@@ -37,7 +39,7 @@ class ReinforceAgent:
 
     Args:
         state_dim:  dimensionality of the state vector (3 + K).
-        action_dim: dimensionality of the action vector (2).
+        action_dim: dimensionality of the action vector (must be MAZE_ACTION_DIM).
         config:     dataclass with all hyperparameters (see utils/config.py).
         device:     torch device to run on.
         baseline:   BaseBaseline instance. Defaults to ZeroBaseline().
@@ -64,13 +66,11 @@ class ReinforceAgent:
             self.actor.parameters(), lr=config.lr_reinforce
         )
 
-        # Scale factor: tanh maps to [-1, 1], rescale to action bounds.
-        # Action order: (fx_body, fy_body, delta_theta_deg)
-        self.action_scale = torch.FloatTensor([
-            config.max_thrust,
-            config.max_thrust,
-            config.max_delta_theta,
-        ]).to(device)
+        self.action_scale = torch.tensor(
+            [config.max_thrust, config.max_thrust, config.max_delta_theta],
+            dtype=torch.float32,
+            device=device,
+        )
 
         # --- Episode buffer ---
         # Stores transitions collected during the current episode.
@@ -111,12 +111,23 @@ class ReinforceAgent:
             with torch.no_grad():
                 mean, _ = self.actor.forward(state_tensor)
                 action = torch.tanh(mean) * self.action_scale
-            return action.squeeze(0).cpu().numpy(), None
+            out = action.squeeze(0).cpu().numpy()
+        else:
+            # Sample with reparametrisation — keep graph for update()
+            action_tanh, log_prob = self.actor.sample(state_tensor)
+            action = action_tanh * self.action_scale
+            out = action.detach().squeeze(0).cpu().numpy()
+            if out.shape != (MAZE_ACTION_DIM,):
+                raise RuntimeError(
+                    f"Actor must return action shape ({MAZE_ACTION_DIM},), got {out.shape}."
+                )
+            return out, log_prob
 
-        # Sample with reparametrisation — keep graph for update()
-        action_tanh, log_prob = self.actor.sample(state_tensor)
-        action = action_tanh * self.action_scale
-        return action.detach().squeeze(0).cpu().numpy(), log_prob
+        if out.shape != (MAZE_ACTION_DIM,):
+            raise RuntimeError(
+                f"Actor must return action shape ({MAZE_ACTION_DIM},), got {out.shape}."
+            )
+        return out, None
 
     def store_transition(
         self,

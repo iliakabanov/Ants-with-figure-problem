@@ -7,7 +7,7 @@ import csv
 
 import numpy as np
 
-from src.utils.config import Config
+from src.utils.config import Config, MAZE_ACTION_DIM
 from src.envs.maze_env import MazeEnv
 from src.agents.actor_critic_agent import ActorCriticAgent
 from src.agents.reinforce_agent import ReinforceAgent
@@ -35,6 +35,12 @@ def build_agent(config: Config,
     state_dim = _env.observation_space.shape[0]
     action_dim = _env.action_space.shape[0]
     _env.close()
+
+    if action_dim != MAZE_ACTION_DIM:
+        raise ValueError(
+            f"MazeEnv action_space has size {action_dim}; expected MAZE_ACTION_DIM={MAZE_ACTION_DIM} "
+            "(fx_body, fy_body, delta_theta_deg)."
+        )
 
     if agent_name == 'ac':
         return ActorCriticAgent(state_dim, action_dim, config, device)
@@ -114,7 +120,8 @@ def train(config: Config, agent) -> None:
 
             if is_ac:
                 agent.replay_buffer.push(state, action, reward, next_state, done)
-                if len(agent.replay_buffer) > 0:
+                need = max(config.batch_size, config.warmup_steps)
+                if len(agent.replay_buffer) >= need:
                     agent.update()
             else:
                 agent.store_transition(state, action, reward, log_prob)

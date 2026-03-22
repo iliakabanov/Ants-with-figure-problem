@@ -1,5 +1,8 @@
 from dataclasses import dataclass
 
+# Continuous action size for MazeEnv / agents (fx_body, fy_body, delta_theta_deg).
+MAZE_ACTION_DIM = 3
+
 
 @dataclass
 class Config:
@@ -21,9 +24,6 @@ class Config:
     corridor_length: float = 7.0
     randomise_gaps: bool = True     # randomise y_gap each episode
     max_steps: int = 100
-    r_max: float = 10.0
-    # MazeEnv не использует: с каждого угла 5 лучей по розе вокруг ``FigureCornerLabel.wind8``.
-    n_ray_directions: int = 8
 
     # Figure
     top_bar_length: float = 5.0
@@ -37,21 +37,24 @@ class Config:
 
     # Reward
     r_fin: float = 100.0
-    r_col: float = 1.0
-    r_oob: float = 1.0
+    r_col: float = 10.0
+    r_oob: float = 10.0
     r_wall: float = 10.0
     r_step: float = 1.0
+    # Бонус за сдвиг в мировую сторону +x (вправо) за успешный шаг; 0 = выключено.
+    r_right: float = 1.0
 
-    # Actor-Critic
+    # Actor-Critic (replay + target Q + SAC-style entropy regularisation)
     lr_actor: float = 3e-4
     lr_critic: float = 3e-4
-    lr_alpha: float = 3e-4
+    # Weight on log pi in actor loss and soft Bellman target; 0 disables entropy bonus.
+    entropy_coef: float = 0.01
     gamma: float = 0.99
     tau: float = 0.005
     batch_size: int = 256
-    buffer_capacity: int = 1_000_000
-    hidden_dim: int = 256
-    warmup_steps: int = 1000
+    buffer_capacity: int = 200_000
+    hidden_dim: int = 64
+    warmup_steps: int = 0
 
     # REINFORCE
     lr_reinforce: float = 1e-3
