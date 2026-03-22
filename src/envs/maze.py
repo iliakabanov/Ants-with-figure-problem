@@ -19,8 +19,8 @@ class Maze:
 
     def __init__(self, config: Config, space: pymunk.Space) -> None:
         """
-        Build room boundaries and wall segments in the pymunk space.
-        Wall segments are split into top and bottom parts around the gap.
+        Build room boundaries and interior wall slabs in the pymunk space.
+        Each vertical wall is two axis-aligned polygons (below / above the gap).
 
         Args:
             config: Config with room dimensions, gap_width, wall x-positions.
@@ -39,16 +39,14 @@ class Maze:
         # Solid thickness of outer frame (world units). Segments with radius gave weak corners.
         self._border_thickness = max(self._radius * 2.0, 1.0)
         self._border_polys: list[pymunk.Poly] = []
-        self._wall_segs: list[tuple[pymunk.Segment, pymunk.Segment]] = []
+        # Interior walls as axis-aligned Polys (half-width thickness/2). Segment+radius bulges into the gap.
+        self._wall_polys: list[tuple[pymunk.Poly | None, pymunk.Poly | None]] = []
 
         self._y_gaps = [rh * 0.5, rh * 0.5]
 
         self._add_room_bounds(rw, rh)
-        for xw in self._x_walls:
-            lower, upper = self._make_wall_pair_segments(xw, rh)
-            self._wall_segs.append((lower, upper))
-            space.add(lower, upper)
-
+        for _ in self._x_walls:
+            self._wall_polys.append((None, None))
         self._sync_wall_segments()
 
     def _add_room_bounds(self, rw: float, rh: float) -> None:
@@ -84,23 +82,54 @@ class Maze:
             self._border_polys.append(poly)
             self._space.add(poly)
 
-    def _make_wall_pair_segments(self, x_wall: float, rh: float) -> tuple[pymunk.Segment, pymunk.Segment]:
-        lower = pymunk.Segment(self._static, (x_wall, 0.0), (x_wall, 0.0), self._radius)
-        upper = pymunk.Segment(self._static, (x_wall, rh), (x_wall, rh), self._radius)
-        for seg in (lower, upper):
-            seg.friction = 0.7
-            seg.elasticity = 0.0
-        return lower, upper
-
     def _sync_wall_segments(self) -> None:
         rh = self._cfg.room_height
         half_gap = self._cfg.gap_width * 0.5
-        for (lower, upper), xw, yc in zip(self._wall_segs, self._x_walls, self._y_gaps):
+        hw = self._cfg.thickness * 0.5
+
+        for i, (xw, yc) in enumerate(zip(self._x_walls, self._y_gaps)):
+            old_lower, old_upper = self._wall_polys[i]
+            for old in (old_lower, old_upper):
+                if old is not None:
+                    self._space.remove(old)
+
             y_lo = max(0.0, yc - half_gap)
             y_hi = min(rh, yc + half_gap)
-            lower.unsafe_set_endpoints((xw, 0.0), (xw, y_lo))
-            upper.unsafe_set_endpoints((xw, y_hi), (xw, rh))
-        # unsafe_set_endpoints does not refresh the static spatial hash; required for shape_query / collisions.
+            x_left = xw - hw
+            x_right = xw + hw
+
+            new_lower: pymunk.Poly | None = None
+            if y_lo > 1e-6:
+                new_lower = pymunk.Poly(
+                    self._static,
+                    [
+                        (x_left, 0.0),
+                        (x_right, 0.0),
+                        (x_right, y_lo),
+                        (x_left, y_lo),
+                    ],
+                )
+                new_lower.friction = 0.7
+                new_lower.elasticity = 0.0
+                self._space.add(new_lower)
+
+            new_upper: pymunk.Poly | None = None
+            if y_hi < rh - 1e-6:
+                new_upper = pymunk.Poly(
+                    self._static,
+                    [
+                        (x_left, y_hi),
+                        (x_right, y_hi),
+                        (x_right, rh),
+                        (x_left, rh),
+                    ],
+                )
+                new_upper.friction = 0.7
+                new_upper.elasticity = 0.0
+                self._space.add(new_upper)
+
+            self._wall_polys[i] = (new_lower, new_upper)
+
         self._space.reindex_static()
 
     def get_wall_geometries(self) -> list[dict]:

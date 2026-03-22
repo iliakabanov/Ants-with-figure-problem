@@ -66,6 +66,8 @@ class MazeEnv(gymnasium.Env):
         # нулевой угол ставит её в идеальное положение для старта
         start_theta = 0.0
         self.figure.set_state(start_x, start_y, start_theta)
+        self.space.reindex_shapes_for_body(self.figure.body)
+        self.space.reindex_static()
 
         walls = self.maze.get_wall_geometries()
         self._rho_1 = self.figure.compute_progress(walls[0])
@@ -99,6 +101,7 @@ class MazeEnv(gymnasium.Env):
 
         self.figure.set_state(new_x, new_y, new_theta)
         self.space.reindex_shapes_for_body(self.figure.body)
+        self.space.reindex_static()
 
         collision = False
         for shape in self.figure._shapes:
@@ -115,6 +118,7 @@ class MazeEnv(gymnasium.Env):
         if collision or out_of_bounds:
             self.figure.set_state(old_x, old_y, old_theta)
             self.space.reindex_shapes_for_body(self.figure.body)
+            self.space.reindex_static()
             corners = self.figure.get_corners()
 
         state = self._compute_state()
@@ -148,8 +152,10 @@ class MazeEnv(gymnasium.Env):
             ignore_bodies=[self.figure.body]
         )
 
+        n_dir = len(directions)
+        ray_origins_flat = [c for c in corners for _ in range(n_dir)]
         self._last_rays = {
-            "origins": np.repeat(corners, len(directions), axis=0).tolist(),
+            "origins": ray_origins_flat,
             "endpoints": endpoints,
             "hits": hits
         }
