@@ -218,8 +218,6 @@ class MazeEnv(gymnasium.Env):
             "ray_endpoints": self._last_rays.get("endpoints", []),
             "ray_hits": self._last_rays.get("hits", []),
         }
-        if self.config.viz_corner_labels:
-            env_state["figure_corner_labels"] = [str(lb) for lb in self.figure.corner_labels]
         return self.renderer.render(env_state)
 
     def seed(self, seed: int) -> None:

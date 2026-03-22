@@ -40,7 +40,6 @@ class Renderer:
 
         self._screen: pygame.Surface | None = None
         self._canvas = pygame.Surface((self._surf_w, self._surf_h))
-        self._corner_label_font: pygame.font.Font | None = None
 
         pygame.init()
         pygame.display.set_caption("Figure maze")
@@ -49,33 +48,6 @@ class Renderer:
         sx = self._pad + x * self._scale
         sy = self._surf_h - self._pad - y * self._scale
         return int(round(sx)), int(round(sy))
-
-    def _get_corner_label_font(self) -> pygame.font.Font:
-        if self._corner_label_font is None:
-            self._corner_label_font = pygame.font.SysFont("arial", 12)
-        return self._corner_label_font
-
-    def _draw_corner_labels(
-        self,
-        surface: pygame.Surface,
-        corners: list[tuple[float, float]],
-        labels: list[str],
-    ) -> None:
-        if len(labels) != len(corners) or not corners:
-            return
-        font = self._get_corner_label_font()
-        fg = (30, 30, 95)
-        bg = (255, 250, 220)
-        border = (140, 130, 100)
-        for (wx, wy), text in zip(corners, labels):
-            sx, sy = self._world_to_screen(float(wx), float(wy))
-            ox, oy = 22, -16
-            surf = font.render(text, True, fg)
-            rect = surf.get_rect(center=(sx + ox, sy + oy))
-            pad = pygame.Rect(rect.x - 2, rect.y - 1, rect.w + 4, rect.h + 2)
-            pygame.draw.rect(surface, bg, pad, border_radius=2)
-            pygame.draw.rect(surface, border, pad, 1, border_radius=2)
-            surface.blit(surf, rect)
 
     def _draw_rays(self, surface: pygame.Surface, env_state: dict) -> None:
         """Draw ray segments and hit / max-range markers when ``env_state`` includes ray data."""
@@ -112,9 +84,6 @@ class Renderer:
             ray_origins — one start per ray (flattened corners × directions);
             ray_endpoints — (x, y) end of each ray;
             ray_hits — True if obstacle hit before r_max, else open range.
-
-        Optional ``figure_corner_labels`` — строки в том же порядке, что
-        ``figure_corners`` (например ``str(FigureCornerLabel)``), для отладки.
         """
         self._canvas.fill(self._bg)
 
@@ -149,10 +118,6 @@ class Renderer:
             poly = [self._world_to_screen(float(px), float(py)) for px, py in corners]
             pygame.draw.polygon(self._canvas, self._figure_fill, poly)
             pygame.draw.polygon(self._canvas, self._figure_edge, poly, 2)
-
-        labels = env_state.get("figure_corner_labels")
-        if isinstance(labels, list) and labels:
-            self._draw_corner_labels(self._canvas, corners, labels)
 
         self._draw_rays(self._canvas, env_state)
 
